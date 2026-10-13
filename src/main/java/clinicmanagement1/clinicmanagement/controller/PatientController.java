@@ -2,6 +2,7 @@ package clinicmanagement1.clinicmanagement.controller;
 
 import clinicmanagement1.clinicmanagement.entity.Appointment;
 import clinicmanagement1.clinicmanagement.entity.Patient;
+import clinicmanagement1.clinicmanagement.service.AppointmentService;
 import clinicmanagement1.clinicmanagement.service.PatientService;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -13,9 +14,11 @@ import java.util.List;
 public class PatientController {
 
     private final PatientService patientService;
+    private final AppointmentService appointmentService;
 
-    public PatientController(PatientService patientService) {
+    public PatientController(PatientService patientService, AppointmentService appointmentService) {
         this.patientService = patientService;
+        this.appointmentService = appointmentService;
     }
 
     @PostMapping
@@ -34,7 +37,6 @@ public class PatientController {
         return patientService.findById(id);
     }
 
-    /** GET /api/patients/search?lastName=doe */
     @GetMapping("/search")
     public List<Patient> search(@RequestParam String lastName) {
         return patientService.searchByLastName(lastName);
@@ -54,5 +56,11 @@ public class PatientController {
     @GetMapping("/{id}/appointments")
     public List<Appointment> appointments(@PathVariable Long id) {
         return patientService.findAppointments(id);
+    }
+
+    // D2 – upcoming appointments of a patient
+    @GetMapping("/{patientId}/upcoming")
+    public List<Appointment> upcoming(@PathVariable Long patientId) {
+        return appointmentService.findUpcoming(patientId);
     }
 }

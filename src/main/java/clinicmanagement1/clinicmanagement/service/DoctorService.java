@@ -10,8 +10,11 @@ import clinicmanagement1.clinicmanagement.exception.ConflictException;
 import clinicmanagement1.clinicmanagement.exception.ResourceNotFoundException;
 import clinicmanagement1.clinicmanagement.repository.AppointmentRepository;
 import clinicmanagement1.clinicmanagement.repository.DoctorRepository;
+import clinicmanagement1.clinicmanagement.repository.OfficeRepository;
 import clinicmanagement1.clinicmanagement.repository.PatientRepository;
 import clinicmanagement1.clinicmanagement.repository.SpecializationRepository;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,28 +24,26 @@ import java.util.Set;
 
 @Service
 public class DoctorService {
-
     private final DoctorRepository doctorRepository;
     private final SpecializationRepository specializationRepository;
     private final AppointmentRepository appointmentRepository;
     private final PatientRepository patientRepository;
+    private final OfficeRepository officeRepository;
 
+    @Autowired
     public DoctorService(DoctorRepository doctorRepository,
                          SpecializationRepository specializationRepository,
                          AppointmentRepository appointmentRepository,
-                         PatientRepository patientRepository) {
+                         PatientRepository patientRepository,
+                         OfficeRepository officeRepository) {
         this.doctorRepository = doctorRepository;
         this.specializationRepository = specializationRepository;
         this.appointmentRepository = appointmentRepository;
         this.patientRepository = patientRepository;
+        this.officeRepository = officeRepository;
     }
 
-    // ------------------------------------------------------------------ CRUD
 
-    /**
-     * Creates a doctor together with its (mandatory) office. Specializations are referenced
-     * by id only, e.g. "specializations": [ {"id": 1}, {"id": 2} ].
-     */
     @Transactional
     public Doctor create(Doctor input) {
         if (input.getOffice() == null) {
@@ -74,7 +75,6 @@ public class DoctorService {
         if (input.getEmail() != null) existing.setEmail(input.getEmail());
         if (input.getPhone() != null) existing.setPhone(input.getPhone());
 
-        // The doctor keeps the SAME office row (exactly one office): we only update its fields.
         if (input.getOffice() != null) {
             Office office = existing.getOffice();
             if (input.getOffice().getRoomNumber() != null) office.setRoomNumber(input.getOffice().getRoomNumber());
@@ -82,7 +82,6 @@ public class DoctorService {
             if (input.getOffice().getBuilding() != null) office.setBuilding(input.getOffice().getBuilding());
         }
 
-        // If a specializations array is sent, it REPLACES the current set.
         if (input.getSpecializations() != null && !input.getSpecializations().isEmpty()) {
             existing.setSpecializations(resolveSpecializations(input.getSpecializations()));
         }
@@ -95,32 +94,79 @@ public class DoctorService {
         if (appointmentRepository.existsByDoctorId(id)) {
             throw new ConflictException("Doctor " + id + " still has appointments and cannot be deleted");
         }
-        // join-table rows are removed automatically (Doctor owns the N-N); the office is removed by cascade.
         doctorRepository.delete(existing);
     }
 
-    // ------------------------------------------------- Many-to-Many operations
 
     @Transactional
-    public Doctor addSpecialization(Long doctorId, Long specializationId) {
-        Doctor doctor = findById(doctorId);
-        Specialization spec = specializationRepository.findById(specializationId)
-                .orElseThrow(() -> new ResourceNotFoundException("Specialization", specializationId));
-        doctor.getSpecializations().add(spec);
-        return doctorRepository.save(doctor);
-    }
-
-    @Transactional
-    public Doctor removeSpecialization(Long doctorId, Long specializationId) {
-        Doctor doctor = findById(doctorId);
-        boolean removed = doctor.getSpecializations().removeIf(s -> s.getId().equals(specializationId));
-        if (!removed) {
-            throw new ResourceNotFoundException("Specialization (assigned to doctor " + doctorId + ")", specializationId);
+    public String addSpecializationToDoctor(Long doctorId, Long specializationId) {
+        if (!doctorRepository.existsById(doctorId)) {
+            return "The doctor with that id does not exist";
         }
-        return doctorRepository.save(doctor);
+        if (!specializationRepository.existsById(specializationId)) {
+            return "That specialization does not exist";
+        }
+
+        Doctor doctor = doctorRepository.findByIdWithSpecializations(doctorId).get();
+        Specialization specialization = specializationRepository.findById(specializationId).get();
+
+        if (doctor.getSpecializations().contains(specialization)) {
+            return "The doctor already has that specialization";
+        }
+
+        doctor.getSpecializations().add(specialization);
+        specialization.getDoctors().add(doctor);
+        doctorRepository.save(doctor);
+
+        return "Specialization added to the doctor";
     }
 
-    // ----------------------------------------------------------------- Queries
+    @Transactional
+    public String removeSpecializationFromDoctor(Long doctorId, Long specializationId) {
+        if (!doctorRepository.existsById(doctorId)) {
+            return "The doctor with that id does not exist";
+        }
+        if (!specializationRepository.existsById(specializationId)) {
+            return "That specialization does not exist";
+        }
+
+        Doctor doctor = doctorRepository.findByIdWithSpecializations(doctorId).get();
+        Specialization specialization = specializationRepository.findById(specializationId).get();
+
+        if (!doctor.getSpecializations().contains(specialization)) {
+            return "The doctor does not have that specialization";
+        }
+
+        doctor.getSpecializations().remove(specialization);
+        specialization.getDoctors().remove(doctor);
+        doctorRepository.save(doctor);
+
+        return "Specialization removed from the doctor";
+    }
+
+    @Transactional
+    public String moveDoctorToOffice(Long doctorId, Long officeNumber) {
+        if (!doctorRepository.existsById(doctorId)) {
+            return "The doctor with that id does not exist";
+        }
+        
+       Office office = officeRepository.findByRoomNumber(String.valueOf(officeNumber)).orElse(null);
+        if (office == null) {
+            return "The office with that office number does not exist";
+        }
+
+       if (doctorRepository.existsByOfficeId(officeNumber)) {
+            return "That office is taken by other doctor";
+        }
+
+        Doctor doctor = doctorRepository.findById(doctorId).get();
+        doctor.setOffice(office);
+        doctorRepository.save(doctor);
+
+        return "Office changed successfully";
+    }
+
+    
 
     @Transactional(readOnly = true)
     public List<Doctor> findBySpecializationName(String name) {
@@ -130,6 +176,12 @@ public class DoctorService {
     @Transactional(readOnly = true)
     public List<Doctor> searchByLastName(String lastName) {
         return doctorRepository.findByLastNameContainingIgnoreCase(lastName);
+    }
+
+    // D3
+    @Transactional(readOnly = true)
+    public List<Doctor> searchByName(String name) {
+        return doctorRepository.searchByName(name);
     }
 
     @Transactional(readOnly = true)

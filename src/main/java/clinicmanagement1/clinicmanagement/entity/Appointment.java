@@ -1,22 +1,10 @@
 package clinicmanagement1.clinicmanagement.entity;
 
 import jakarta.persistence.*;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
-
 import java.time.LocalDateTime;
 
-/**
- * Patient <-> Doctor is N-N, but the relationship carries its own data
- * (date, reason, status) so it is PROMOTED to an entity.
- * Both foreign keys (patient_id, doctor_id) live in this table.
- */
 @Entity
 @Table(name = "appointments")
-@Getter
-@Setter
-@NoArgsConstructor
 public class Appointment {
 
     @Id
@@ -35,9 +23,26 @@ public class Appointment {
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "patient_id", nullable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private Patient patient;
 
     @ManyToOne(optional = false)
     @JoinColumn(name = "doctor_id", nullable = false)
+    @com.fasterxml.jackson.annotation.JsonIgnore
     private Doctor doctor;
+
+    public Appointment() {}
+
+    public Long getId() { return id; }
+    public void setId(Long id) { this.id = id; }
+    public LocalDateTime getAppointmentDate() { return appointmentDate; }
+    public void setAppointmentDate(LocalDateTime appointmentDate) { this.appointmentDate = appointmentDate; }
+    public String getReason() { return reason; }
+    public void setReason(String reason) { this.reason = reason; }
+    public AppointmentStatus getStatus() { return status; }
+    public void setStatus(AppointmentStatus status) { this.status = status; }
+    public Patient getPatient() { return patient; }
+    public void setPatient(Patient patient) { this.patient = patient; }
+    public Doctor getDoctor() { return doctor; }
+    public void setDoctor(Doctor doctor) { this.doctor = doctor; }
 }

@@ -13,7 +13,10 @@ import java.util.List;
 @Service
 public class OfficeService {
 
-    private final OfficeRepository officeRepository;
+    private OfficeRepository officeRepository;
+    public List<Office> getFreeOffices() {
+        return officeRepository.findFreeOffices();
+    }
 
     public OfficeService(OfficeRepository officeRepository) {
         this.officeRepository = officeRepository;

@@ -6,15 +6,19 @@ import clinicmanagement1.clinicmanagement.entity.Doctor;
 import clinicmanagement1.clinicmanagement.entity.Patient;
 import clinicmanagement1.clinicmanagement.exception.BadRequestException;
 import clinicmanagement1.clinicmanagement.exception.ConflictException;
+import clinicmanagement1.clinicmanagement.service.PrescriptionService;
 import clinicmanagement1.clinicmanagement.exception.ResourceNotFoundException;
 import clinicmanagement1.clinicmanagement.report.DoctorWorkload;
 import clinicmanagement1.clinicmanagement.repository.AppointmentRepository;
 import clinicmanagement1.clinicmanagement.repository.DoctorRepository;
 import clinicmanagement1.clinicmanagement.repository.PatientRepository;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 
 @Service
@@ -23,6 +27,7 @@ public class AppointmentService {
     private final AppointmentRepository appointmentRepository;
     private final DoctorRepository doctorRepository;
     private final PatientRepository patientRepository;
+    private PrescriptionService prescriptionService;
 
     public AppointmentService(AppointmentRepository appointmentRepository,
                               DoctorRepository doctorRepository,
@@ -30,6 +35,10 @@ public class AppointmentService {
         this.appointmentRepository = appointmentRepository;
         this.doctorRepository = doctorRepository;
         this.patientRepository = patientRepository;
+    }
+
+    public void setPrescriptionService(PrescriptionService prescriptionService) {
+        this.prescriptionService = prescriptionService;
     }
 
     /** A patient books an appointment with a doctor. */
@@ -89,10 +98,13 @@ public class AppointmentService {
 
     @Transactional
     public void delete(Long id) {
-        appointmentRepository.delete(findById(id));
+        Appointment existing = findById(id);
+        if (prescriptionService != null && prescriptionService.hasPresciptions(id)) {
+            throw new ConflictException("That appointment has prescriptions, delete them first");
+        }
+        appointmentRepository.delete(existing);
     }
 
-    // ----------------------------------------------------------------- Queries
 
     @Transactional(readOnly = true)
     public List<Appointment> findByStatus(AppointmentStatus status) {
@@ -112,5 +124,37 @@ public class AppointmentService {
     @Transactional(readOnly = true)
     public List<DoctorWorkload> workloadPerDoctor() {
         return appointmentRepository.countAppointmentsPerDoctor();
+    }
+
+    // D1 – doctor's agenda for a day
+    @Transactional(readOnly = true)
+    public List<Appointment> findAgenda(Long doctorId, LocalDate date) {
+        if (!doctorRepository.existsById(doctorId)) {
+            throw new ResourceNotFoundException("The doctor with that id does not exist");
+        }
+        LocalDateTime from = date.atStartOfDay();
+        LocalDateTime to = date.plusDays(1).atStartOfDay();
+        return appointmentRepository
+                .findByDoctorIdAndAppointmentDateBetweenAndStatusNotOrderByAppointmentDate(
+                        doctorId, from, to, AppointmentStatus.CANCELLED);
+    }
+
+    // D2 – upcoming appointments of a patient
+    @Transactional(readOnly = true)
+    public List<Appointment> findUpcoming(Long patientId) {
+        if (!patientRepository.existsById(patientId)) {
+            throw new ResourceNotFoundException("That patient with that ssnumber does not exist");
+        }
+        return appointmentRepository
+                .findByPatientIdAndAppointmentDateGreaterThanEqualAndStatusInOrderByAppointmentDate(
+                        patientId,
+                        LocalDate.now().atStartOfDay(),
+                        Arrays.asList(AppointmentStatus.SCHEDULED, AppointmentStatus.CONFIRMED));
+    }
+
+    // Bonus – doctor workload for a date range
+    @Transactional(readOnly = true)
+    public List<Object[]> doctorWorkload(LocalDateTime start, LocalDateTime end) {
+        return appointmentRepository.countCompletedByDoctor(start, end);
     }
 }
